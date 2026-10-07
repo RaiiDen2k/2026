@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rekomp">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Rekomp Training</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--card2:#1f232c;--line:#2a2f3a;--tx:#e8eaf0;--mut:#8b93a5;--acc:#4ade80;--acc2:#22c55e;--warn:#fbbf24;--bad:#f87171;--blue:#60a5fa}
+@media (prefers-color-scheme:light){:root{--bg:#f4f5f8;--card:#fff;--card2:#eef0f5;--line:#d9dde6;--tx:#14171f;--mut:#5d6578;--acc:#16a34a;--acc2:#15803d;--warn:#b45309;--bad:#dc2626;--blue:#2563eb}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px 16px calc(84px + env(safe-area-inset-bottom))}
+h1{font-size:22px;margin:4px 0 12px}h2{font-size:18px;margin:20px 0 8px}h3{font-size:16px;margin:0 0 4px}
+p{margin:6px 0}small,.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.row{display:flex;gap:8px;align-items:center}.sp{justify-content:space-between}.wrap{flex-wrap:wrap}
+button,.btn{font:inherit;border:0;border-radius:10px;padding:12px 16px;background:var(--card2);color:var(--tx);cursor:pointer;text-decoration:none;display:inline-block;text-align:center}
+button.pri,.btn.pri{background:var(--acc);color:#07210f;font-weight:700}
+button.dng{color:var(--bad)}button.sm{padding:8px 12px;font-size:14px}button.full{width:100%}
+input,select{font:inherit;color:var(--tx);background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%;min-width:0}
+input[type=checkbox]{width:28px;height:28px;accent-color:var(--acc)}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav button{flex:1;background:none;border-radius:0;padding:12px 4px;font-size:12px;color:var(--mut)}
+nav button.on{color:var(--acc);font-weight:700}
+nav button span{display:block;font-size:20px}
+.set{display:grid;grid-template-columns:34px 1fr 1fr 40px;gap:8px;align-items:center;margin:6px 0}
+.set .n{color:var(--mut);text-align:center}
+.set.done input{opacity:.55}
+.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--card2);color:var(--mut);margin-right:4px}
+.tag.g{background:rgba(74,222,128,.15);color:var(--acc)}
+.hint{color:var(--warn);font-size:14px}
+details summary{cursor:pointer;color:var(--blue);padding:6px 0}
+.timer{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom));max-width:616px;margin:0 auto;background:var(--acc);color:#07210f;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;z-index:6}
+.timer button{background:rgba(0,0,0,.15);color:#07210f;padding:6px 12px}
+svg.chart{width:100%;height:auto;display:block}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.box{border-left:3px solid var(--acc);padding-left:10px;margin:8px 0}
+.box.w{border-color:var(--warn)}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.kpi div{background:var(--card2);border-radius:10px;padding:10px;text-align:center}.kpi b{display:block;font-size:20px}
+ul{padding-left:20px;margin:6px 0}li{margin:3px 0}
+.saved{position:fixed;top:8px;right:12px;font-size:12px;color:var(--mut);z-index:7}
+</style>
+</head>
+<body>
+<div class="saved" id="saved"></div>
+<main id="app"></main>
+<div id="timerbox"></div>
+<nav id="nav"></nav>
+<script>
+"use strict";
+/* ============ Daten: Übungen & Pläne ============ */
+const yt = q => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+const EX = {
+  kniebeuge:{n:"Goblet-Kniebeuge / Kniebeuge",m:"Beine, Po",sets:3,reps:[6,10],rest:150,inc:2.5,q:"Kniebeuge richtig ausführen Technik Anfänger",how:["Füße schulterbreit, Fußspitzen leicht nach außen","Brust hoch, Rumpf anspannen, Knie folgen den Fußspitzen","Kontrolliert runter bis mind. Oberschenkel parallel","Mit Druck durch die ganze Fußsohle hoch"]},
+  beinpresse:{n:"Beinpresse",m:"Beine, Po",sets:3,reps:[8,12],rest:150,inc:5,q:"Beinpresse richtig ausführen",how:["Rücken & Po fest an der Lehne","Füße mittig, etwa schulterbreit","Tief genug, ohne dass sich der untere Rücken löst","Knie oben nicht durchdrücken"]},
+  ausfall:{n:"Ausfallschritte (Kurzhanteln)",m:"Beine, Po",sets:3,reps:[8,12],rest:120,inc:2,q:"Ausfallschritte Kurzhanteln Technik",how:["Großer Schritt, Oberkörper aufrecht","Hinteres Knie kontrolliert Richtung Boden","Vorderes Knie bleibt über dem Fuß","Reps pro Bein zählen"]},
+  bank:{n:"Bankdrücken Kurzhanteln",m:"Brust, Schulter, Trizeps",sets:3,reps:[6,10],rest:150,inc:2,q:"Kurzhantel Bankdrücken richtig ausführen",how:["Schulterblätter zusammen und nach unten ziehen","Ellbogen ca. 45–60° zum Körper, nicht 90°","Hanteln bis Brusthöhe senken","Kontrolliert hochdrücken"]},
+  schraeg:{n:"Schrägbankdrücken Kurzhanteln",m:"Obere Brust, Schulter",sets:3,reps:[8,12],rest:120,inc:2,q:"Schrägbankdrücken Kurzhantel Technik",how:["Bank ca. 30°","Schulterblätter fixiert","Ellbogen leicht angewinkelt","Oben nicht aneinanderschlagen"]},
+  schulter:{n:"Schulterdrücken Kurzhanteln",m:"Schulter, Trizeps",sets:3,reps:[8,12],rest:120,inc:2,q:"Schulterdrücken Kurzhanteln sitzend Technik",how:["Sitzen, Rücken an der Lehne","Rumpf & Gesäß anspannen, kein Hohlkreuz","Hanteln auf Kinnhöhe starten","Über dem Kopf strecken"]},
+  latzug:{n:"Latziehen (Breit)",m:"Rücken, Bizeps",sets:3,reps:[8,12],rest:120,inc:2.5,q:"Latzug richtig ausführen",how:["Schulterbreiter Obergriff","Schulterblätter zuerst nach unten ziehen","Stange zur oberen Brust, Ellbogen nach unten","Oben kontrolliert strecken, nicht hochreißen"]},
+  latzugeng:{n:"Latziehen eng / Untergriff",m:"Rücken, Bizeps",sets:3,reps:[8,12],rest:120,inc:2.5,q:"Latzug enger Griff Untergriff Technik",how:["Enger Griff oder Untergriff","Zur Brust ziehen, Ellbogen am Körper","Kein Schwung aus dem Oberkörper","Langsam zurück"]},
+  rudern:{n:"Rudern am Kabel (sitzend)",m:"Oberer Rücken, Bizeps",sets:3,reps:[8,12],rest:120,inc:2.5,q:"Kabelrudern sitzend richtig ausführen",how:["Brust raus, Rücken gerade","Zum Bauchnabel ziehen","Schulterblätter am Ende zusammen","Nicht mit dem Oberkörper wippen"]},
+  rdl:{n:"Rumänisches Kreuzheben (Kurzhanteln)",m:"Beinbeuger, Po, unterer Rücken",sets:3,reps:[8,12],rest:150,inc:2.5,q:"Rumänisches Kreuzheben Kurzhanteln Technik",how:["Knie leicht gebeugt, bleibt so","Hüfte nach hinten schieben","Hanteln nah am Körper entlang","Rücken neutral, Dehnung in den Beinbeugern spüren"]},
+  hipthrust:{n:"Hip Thrust",m:"Po, Beinbeuger",sets:3,reps:[8,12],rest:120,inc:5,q:"Hip Thrust richtig ausführen",how:["Oberer Rücken an Bank, Füße hüftbreit","Kinn leicht zur Brust","Hüfte hoch bis Rumpf eine Linie bildet","Oben Po 1 Sek. anspannen"]},
+  beinbeuger:{n:"Beinbeuger liegend (Maschine)",m:"Beinbeuger",sets:3,reps:[10,15],rest:90,inc:2.5,q:"Beinbeuger liegend Maschine Technik",how:["Polster knapp über den Fersen","Hüfte bleibt am Polster","Kontrolliert beugen und langsam ablassen"]},
+  seitheben:{n:"Seitheben",m:"Seitliche Schulter",sets:3,reps:[12,20],rest:75,inc:1,q:"Seitheben Kurzhanteln Technik",how:["Leicht vorgebeugt, Ellbogen leicht gebeugt","Bis max. Schulterhöhe heben","Nicht schwingen","Langsam ablassen"]},
+  facepull:{n:"Face Pulls (Kabel)",m:"Hintere Schulter, oberer Rücken",sets:3,reps:[12,20],rest:75,inc:2.5,q:"Face Pulls richtig ausführen",how:["Seil auf Gesichtshöhe","Zum Gesicht ziehen, Ellbogen hoch","Enden auseinanderziehen","Leichtes Gewicht, saubere Kontrolle"]},
+  trizeps:{n:"Trizepsdrücken (Kabel)",m:"Trizeps",sets:2,reps:[10,15],rest:75,inc:2.5,q:"Trizepsdrücken Kabel Technik",how:["Ellbogen am Körper fixiert","Nur der Unterarm bewegt sich","Unten voll strecken","Langsam zurück"]},
+  bizeps:{n:"Bizepscurls (Kurzhanteln)",m:"Bizeps",sets:2,reps:[10,15],rest:75,inc:1,q:"Bizepscurls Kurzhanteln Technik",how:["Ellbogen am Körper","Kein Schwung aus dem Rücken","Oben kurz anspannen","Kontrolliert ablassen"]},
+  plank:{n:"Plank (Sekunden statt Wdh.)",m:"Rumpf",sets:3,reps:[30,60],rest:60,inc:5,q:"Plank richtig ausführen",unit:"s",how:["Unterarme unter den Schultern","Körper eine Linie, Po nicht hoch","Bauch & Po anspannen","Normal weiteratmen – im Feld 'Wdh.' die Sekunden eintragen"]},
+  wade:{n:"Wadenheben",m:"Waden",sets:2,reps:[10,15],rest:60,inc:2.5,q:"Wadenheben stehend Technik",how:["Volle Dehnung unten","Oben kurz halten","Kein Wippen"]}
+};
+const PLANS = {
+  A:{name:"Training A",sub:"Beine · Drücken · Ziehen",ex:["kniebeuge","bank","latzug","rdl","seitheben","plank"]},
+  B:{name:"Training B",sub:"Beinpresse · Schulter · Rudern",ex:["beinpresse","schulter","rudern","hipthrust","bizeps","trizeps"]},
+  C:{name:"Training C",sub:"Einbeinig · Schräg · Zug",ex:["ausfall","schraeg","latzugeng","beinbeuger","facepull","wade"]}
+};
+
+/* ============ State & Persistenz ============ */
+const KEY="rekomp.v1";
+let S = load();
+function load(){
+  try{const r=localStorage.getItem(KEY);if(r)return Object.assign({settings:{days:3,rest:true},sessions:[],bw:[],active:null,calc:{}},JSON.parse(r));}catch(e){}
+  return {settings:{days:3,rest:true},sessions:[],bw:[],active:null,calc:{}};
+}
+let saveT;
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(S));const el=document.getElementById("saved");el.textContent="✓ gespeichert";clearTimeout(saveT);saveT=setTimeout(()=>el.textContent="",1200);}
+  catch(e){document.getElementById("saved").textContent="⚠ Speichern fehlgeschlagen";}
+}
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
+document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
+window.addEventListener("pagehide",save);
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+const fmtD=s=>{const [y,m,d]=s.split("-");return d+"."+m+".";};
+const num=v=>{const n=parseFloat(String(v).replace(",","."));return isFinite(n)?n:null;};
+const e1rm=(w,r)=>w*(1+r/30);
+
+let tab="train";
+
+/* ============ Logik ============ */
+function planOrder(){return S.settings.days===2?["A","B"]:["A","B","C"];}
+function nextPlan(){
+  const ord=planOrder();
+  const last=[...S.sessions].reverse().find(s=>s.finished);
+  if(!last)return ord[0];
+  const i=ord.indexOf(last.plan);
+  return ord[(i+1)%ord.length];
+}
+function lastSets(exId,before){
+  for(let i=S.sessions.length-1;i>=0;i--){
+    const s=S.sessions[i];if(!s.finished||s===before)continue;
+    const a=(s.sets[exId]||[]).filter(x=>x.done&&x.w!==""&&x.r!=="");
+    if(a.length)return {date:s.date,sets:a};
+  }
+  return null;
+}
+function startWorkout(p){
+  const sets={};
+  PLANS[p].ex.forEach(id=>{
+    const e=EX[id],prev=lastSets(id);
+    sets[id]=Array.from({length:e.sets},(_,i)=>({w:"",r:"",done:false}));
+  });
+  S.active={id:Date.now(),plan:p,date:today(),sets,finished:false,start:Date.now()};
+  save();render();
+}
+function progressHint(id){
+  const e=EX[id],p=lastSets(id);
+  if(!p)return null;
+  const ok=p.sets.length>=e.sets && p.sets.every(x=>num(x.r)>=e.reps[1]);
+  const top=Math.max(...p.sets.map(x=>num(x.w)||0));
+  if(ok)return {up:true,txt:`Letztes Mal alle Sätze ${e.reps[1]}+ Wdh. → heute ${+(top+e.inc).toFixed(1)} kg probieren`,top};
+  return {up:false,txt:`Ziel: gleiches Gewicht (${top} kg), mehr Wdh. bis ${e.reps[1]} in allen Sätzen`,top};
+}
+function finishWorkout(){
+  const a=S.active;
+  const any=Object.values(a.sets).some(arr=>arr.some(x=>x.done));
+  if(!any&&!confirm("Kein Satz abgehakt. Trotzdem beenden und verwerfen?"))return;
+  if(any){a.finished=true;a.end=Date.now();S.sessions.push(a);}
+  S.active=null;stopTimer();save();tab="prog";render();
+}
+function discardWorkout(){if(confirm("Training wirklich verwerfen? Alle Eingaben dieser Einheit gehen verloren.")){S.active=null;stopTimer();save();render();}}
+
+/* Timer */
+let tInt=null,tEnd=0;
+function startTimer(sec){tEnd=Date.now()+sec*1000;clearInterval(tInt);tInt=setInterval(tickTimer,250);tickTimer();}
+function stopTimer(){clearInterval(tInt);tInt=null;$("#timerbox").innerHTML="";}
+function tickTimer(){
+  const left=Math.ceil((tEnd-Date.now())/1000);
+  if(left<=0){stopTimer();if(navigator.vibrate)navigator.vibrate([200,100,200]);return;}
+  const m=Math.floor(left/60),s=String(left%60).padStart(2,"0");
+  $("#timerbox").innerHTML=`<div class="timer"><span>Pause ${m}:${s}</span><span><button onclick="startTimer(Math.max(5,Math.ceil((tEnd-Date.now())/1000)+30))">+30s</button> <button onclick="stopTimer()">Skip</button></span></div>`;
+}
+
+/* ============ Charts (SVG, offline) ============ */
+function lineChart(pts,{unit="",color="var(--acc)",h=170}={}){
+  if(pts.length<2)return `<p class="mut">Noch zu wenig Daten – ab 2 Einträgen erscheint der Verlauf.</p>`;
+  const W=340,H=h,pl=34,pr=8,pt=10,pb=22;
+  const xs=pts.map(p=>p.t),ys=pts.map(p=>p.y);
+  let x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  if(y0===y1){y0-=1;y1+=1}const pad=(y1-y0)*.12;y0-=pad;y1+=pad;if(x0===x1)x1=x0+1;
+  const X=t=>pl+(t-x0)/(x1-x0)*(W-pl-pr),Y=y=>pt+(1-(y-y0)/(y1-y0))*(H-pt-pb);
+  let g="";for(let i=0;i<=3;i++){const v=y0+(y1-y0)*i/3,yy=Y(v);g+=`<line x1="${pl}" x2="${W-pr}" y1="${yy}" y2="${yy}" stroke="var(--line)"/><text x="${pl-4}" y="${yy+4}" text-anchor="end" font-size="10" fill="var(--mut)">${v.toFixed(v>=100?0:1)}</text>`;}
+  const d=pts.map((p,i)=>(i?"L":"M")+X(p.t).toFixed(1)+","+Y(p.y).toFixed(1)).join(" ");
+  const dots=pts.map(p=>`<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="${color}"/>`).join("");
+  const fl=pts[0],ll=pts[pts.length-1];
+  const lab=`<text x="${pl}" y="${H-6}" font-size="10" fill="var(--mut)">${fl.d}</text><text x="${W-pr}" y="${H-6}" text-anchor="end" font-size="10" fill="var(--mut)">${ll.d}</text>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}<path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}${lab}</svg>`;
+}
+function barChart(vals,labels,{color="var(--blue)",h=140}={}){
+  const W=340,H=h,pl=8,pb=20,pt=14,max=Math.max(1,...vals),bw=(W-pl*2)/vals.length;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">`+vals.map((v,i)=>{
+    const bh=(H-pb-pt)*v/max,x=pl+i*bw+4;
+    return `<rect x="${x}" y="${H-pb-bh}" width="${bw-8}" height="${bh}" rx="4" fill="${color}"/><text x="${x+(bw-8)/2}" y="${H-pb-bh-3}" text-anchor="middle" font-size="10" fill="var(--tx)">${v?Math.round(v):""}</text><text x="${x+(bw-8)/2}" y="${H-5}" text-anchor="middle" font-size="9" fill="var(--mut)">${labels[i]}</text>`;
+  }).join("")+`</svg>`;
+}
+function weekStart(dstr){const d=new Date(dstr+"T12:00:00");const wd=(d.getDay()+6)%7;d.setDate(d.getDate()-wd);return d;}
+
+/* ============ Views ============ */
+function render(){
+  const v={train:vTrain,prog:vProg,food:vFood,more:vMore}[tab]();
+  $("#app").innerHTML=v;
+  $("#nav").innerHTML=[["train","🏋️","Training"],["prog","📈","Fortschritt"],["food","🍽️","Ernährung"],["more","⚙️","Mehr"]]
+    .map(([k,i,l])=>`<button class="${tab===k?"on":""}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join("");
+  if(!S.active)stopTimer();
+}
+function go(t){tab=t;render();window.scrollTo(0,0);}
+
+function exCard(id,idx){
+  const e=EX[id],a=S.active,sets=a.sets[id],h=progressHint(id),p=lastSets(id);
+  const unit=e.unit==="s"?"Sek.":"Wdh.";
+  const rows=sets.map((s,i)=>`<div class="set ${s.done?"done":""}">
+    <div class="n">${i+1}</div>
+    <input inputmode="decimal" placeholder="${p&&p.sets[i]?esc(p.sets[i].w):"kg"}" value="${esc(s.w)}" aria-label="Gewicht Satz ${i+1}" oninput="setVal('${id}',${i},'w',this.value)">
+    <input inputmode="numeric" placeholder="${p&&p.sets[i]?esc(p.sets[i].r):unit}" value="${esc(s.r)}" aria-label="Wiederholungen Satz ${i+1}" oninput="setVal('${id}',${i},'r',this.value)">
+    <input type="checkbox" ${s.done?"checked":""} aria-label="Satz ${i+1} fertig" onchange="setDone('${id}',${i},this.checked)">
+  </div>`).join("");
+  return `<div class="card">
+    <div class="row sp"><h3>${idx+1}. ${esc(e.n)}</h3></div>
+    <div><span class="tag g">${e.sets} × ${e.reps[0]}–${e.reps[1]}${e.unit==="s"?" s":""}</span><span class="tag">${esc(e.m)}</span><span class="tag">Pause ${Math.round(e.rest/60*10)/10} min</span></div>
+    ${h?`<p class="hint">${h.up?"⬆ ":"🎯 "}${esc(h.txt)}</p>`:`<p class="mut"><small>Erstes Mal: Gewicht wählen, bei dem du ${e.reps[1]} Wdh. schaffst und 2 Wdh. „im Tank" hast.</small></p>`}
+    <div class="set" style="margin-top:8px"><div></div><small class="mut">kg</small><small class="mut">${unit}</small><div></div></div>
+    ${rows}
+    <div class="row wrap" style="margin-top:6px">
+      <button class="sm" onclick="addSet('${id}')">+ Satz</button>
+      <a class="btn sm" style="color:var(--blue)" target="_blank" rel="noopener" href="${yt(e.q)}">▶ Video</a>
+    </div>
+    <details><summary>Ausführung &amp; Tipps</summary><ul>${e.how.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></details>
+  </div>`;
+}
+function setVal(id,i,k,v){S.active.sets[id][i][k]=v;save();}
+function setDone(id,i,c){
+  const s=S.active.sets[id][i];s.done=c;
+  if(c){
+    if(s.w===""||s.r===""){const p=lastSets(id);if(p&&p.sets[i]){if(s.w==="")s.w=p.sets[i].w;if(s.r==="")s.r=p.sets[i].r;}}
+    if(S.settings.rest)startTimer(EX[id].rest);
+  }
+  save();render();
+}
+function addSet(id){S.active.sets[id].push({w:"",r:"",done:false});save();render();}
+
+function vTrain(){
+  if(S.active){
+    const a=S.active,pl=PLANS[a.plan];
+    return `<h1>${esc(pl.name)} <small class="mut">· ${fmtD(a.date)}</small></h1>
+    <p class="mut"><small>Jede Eingabe wird sofort gespeichert. Du kannst die App jederzeit schließen und später genau hier weitermachen.</small></p>
+    ${pl.ex.map(exCard).join("")}
+    <button class="pri full" onclick="finishWorkout()">Training beenden &amp; speichern</button>
+    <p><button class="full dng" onclick="discardWorkout()">Training verwerfen</button></p>`;
+  }
+  const n=nextPlan(),ord=planOrder();
+  const wk=weekStart(today()).getTime();
+  const thisWeek=S.sessions.filter(s=>weekStart(s.date).getTime()===wk).length;
+  return `<h1>Training</h1>
+  <div class="card"><div class="row sp"><div><small class="mut">Als Nächstes</small><h3>${esc(PLANS[n].name)}</h3><small>${esc(PLANS[n].sub)}</small></div><button class="pri" onclick="startWorkout('${n}')">Starten</button></div>
+  <p class="mut"><small>Diese Woche: ${thisWeek} / ${S.settings.days} Einheiten</small></p></div>
+  <h2>Alle Pläne</h2>
+  ${ord.map(k=>`<div class="card"><div class="row sp"><h3>${esc(PLANS[k].name)}</h3><button class="sm" onclick="startWorkout('${k}')">Starten</button></div>
+  <small class="mut">${esc(PLANS[k].sub)}</small>
+  <ul>${PLANS[k].ex.map(id=>`<li>${esc(EX[id].n)} <small class="mut">${EX[id].sets}×${EX[id].reps[0]}–${EX[id].reps[1]}</small></li>`).join("")}</ul></div>`).join("")}
+  <div class="card"><h3>So trainierst du</h3>
+  <ul><li><b>Doppelte Progression:</b> Erreichst du in <i>allen</i> Sätzen das obere Wdh.-Ziel, erhöhst du beim nächsten Mal das Gewicht. Die App sagt dir das an.</li>
+  <li><b>Intensität:</b> Sätze enden mit 1–3 Wdh. „im Tank". Nicht jeder Satz bis zum Versagen.</li>
+  <li><b>Rhythmus:</b> ${S.settings.days===2?"2×/Woche A → B, mind. 2 Tage Abstand (z. B. Mo/Do).":"3×/Woche A → B → C, mind. 1 Ruhetag dazwischen (z. B. Mo/Mi/Fr)."} Verpasst du einen Tag, geht es einfach beim nächsten Plan weiter.</li>
+  <li><b>Aufwärmen:</b> 5 min leichtes Cardio + 1–2 leichte Aufwärmsätze der ersten Übung.</li></ul></div>`;
+}
+
+function vProg(){
+  const fin=S.sessions;
+  const lastBw=S.bw.length?S.bw[S.bw.length-1].kg:null;
+  const bwPts=S.bw.map(b=>({t:new Date(b.date+"T12:00:00").getTime(),y:b.kg,d:fmtD(b.date)}));
+  // Wochen-Statistik (letzte 8 Wochen)
+  const base=weekStart(today());const labels=[],cnt=[],vol=[];
+  for(let i=7;i>=0;i--){const d=new Date(base);d.setDate(d.getDate()-7*i);labels.push(String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0"));cnt.push(0);vol.push(0);}
+  fin.forEach(s=>{const diff=Math.round((base-weekStart(s.date))/6048e5);const i=7-diff;if(i>=0&&i<8){cnt[i]++;Object.values(s.sets).forEach(arr=>arr.forEach(x=>{if(x.done)vol[i]+=(num(x.w)||0)*(num(x.r)||0);}));}});
+  // Übungen mit Daten
+  const ids=Object.keys(EX).filter(id=>fin.some(s=>(s.sets[id]||[]).some(x=>x.done&&num(x.w)!==null&&num(x.r)!==null)));
+  const sel=ids.includes(S.selEx)?S.selEx:ids[0];
+  let exHtml=`<p class="mut">Noch keine abgeschlossenen Trainings.</p>`;
+  if(sel){
+    const pts=[];fin.forEach(s=>{const a=(s.sets[sel]||[]).filter(x=>x.done&&num(x.w)!==null&&num(x.r)!==null);if(a.length){const best=Math.max(...a.map(x=>e1rm(num(x.w),num(x.r))));pts.push({t:new Date(s.date+"T12:00:00").getTime(),y:+best.toFixed(1),d:fmtD(s.date)});}});
+    const top=[];fin.forEach(s=>{const a=(s.sets[sel]||[]).filter(x=>x.done&&num(x.w)!==null);if(a.length)top.push({t:new Date(s.date+"T12:00:00").getTime(),y:Math.max(...a.map(x=>num(x.w))),d:fmtD(s.date)});});
+    const delta=pts.length>1?pts[pts.length-1].y-pts[0].y:0;
+    exHtml=`<select onchange="S.selEx=this.value;render()">${ids.map(id=>`<option value="${id}" ${id===sel?"selected":""}>${esc(EX[id].n)}</option>`).join("")}</select>
+    <h3 style="margin-top:12px">Geschätztes 1-Wdh.-Max (kg)</h3>${lineChart(pts)}
+    <h3 style="margin-top:12px">Schwerstes Arbeitsgewicht (kg)</h3>${lineChart(top,{color:"var(--blue)"})}
+    ${pts.length>1?`<p class="${delta>=0?"":"hint"}">${delta>=0?"+":""}${delta.toFixed(1)} kg seit Beginn</p>`:""}`;
+  }
+  const hist=[...fin].reverse().slice(0,15).map((s,i)=>{
+    const sets=Object.values(s.sets).flat().filter(x=>x.done).length;
+    const v=Object.values(s.sets).flat().reduce((a,x)=>a+(x.done?(num(x.w)||0)*(num(x.r)||0):0),0);
+    return `<tr><td>${fmtD(s.date)}</td><td>${esc(PLANS[s.plan].name)}</td><td>${sets} Sätze</td><td>${Math.round(v)} kg</td><td><button class="sm dng" onclick="delSession(${s.id})">✕</button></td></tr>`;
+  }).join("");
+  return `<h1>Fortschritt</h1>
+  <div class="kpi"><div><b>${fin.length}</b><small class="mut">Trainings</small></div><div><b>${lastBw??"–"}</b><small class="mut">kg aktuell</small></div><div><b>${S.bw.length>1?((lastBw-S.bw[0].kg>0?"+":"")+(lastBw-S.bw[0].kg).toFixed(1)):"–"}</b><small class="mut">kg seit Start</small></div></div>
+  <div class="card"><h3>Körpergewicht</h3>
+    <div class="row"><input id="bwin" inputmode="decimal" placeholder="z. B. 88,8" value=""><button class="pri" onclick="addBw()">Eintragen</button></div>
+    ${lineChart(bwPts,{color:"var(--warn)"})}
+    <p class="mut"><small>Rekomposition zeigt sich auf der Waage langsam. Wiege dich morgens nüchtern und achte auf den 7-Tage-Trend, nicht auf Einzelwerte. Zusätzlich alle 4 Wochen Taillenumfang messen.</small></p></div>
+  <div class="card"><h3>Kraftentwicklung</h3>${exHtml}</div>
+  <div class="card"><h3>Trainings pro Woche</h3>${barChart(cnt,labels)}</div>
+  <div class="card"><h3>Volumen pro Woche (kg × Wdh.)</h3>${barChart(vol,labels,{color:"var(--acc)"})}</div>
+  <div class="card"><h3>Letzte Trainings</h3>${hist?`<table>${hist}</table>`:`<p class="mut">Noch nichts gespeichert.</p>`}</div>`;
+}
+function addBw(){const v=num($("#bwin").value);if(!v||v<30||v>300){alert("Bitte ein gültiges Gewicht eingeben.");return;}
+  const d=today();const i=S.bw.findIndex(b=>b.date===d);if(i>=0)S.bw[i].kg=v;else S.bw.push({date:d,kg:v});S.bw.sort((a,b)=>a.date<b.date?-1:1);save();render();}
+function delSession(id){if(confirm("Dieses Training löschen?")){S.sessions=S.sessions.filter(s=>s.id!==id);save();render();}}
+
+function vFood(){
+  const c=S.calc||{};
+  const bw=S.bw.length?S.bw[S.bw.length-1].kg:88.8;
+  let res="";
+  if(c.age&&c.sex){
+    const bmr=10*bw+6.25*169-5*c.age+(c.sex==="m"?5:-161);
+    const tdee=bmr*(c.act||1.45);
+    const lo=tdee*0.85,hi=tdee*0.9;
+    res=`<div class="box"><b>Erhaltung ≈ ${Math.round(tdee)} kcal</b><br>Ziel (Defizit 10–15 %): <b>${Math.round(lo)}–${Math.round(hi)} kcal/Tag</b><br>Protein: <b>${Math.round(bw*1.6)}–${Math.round(bw*2.0)} g/Tag</b> (1,6–2,0 g/kg)<br><small class="mut">Schätzformel (Mifflin-St Jeor), Fehler ±10 %. Echte Kalibrierung: 2–3 Wochen Gewicht &amp; Kalorien tracken, dann anpassen.</small></div>`;
+  }
+  return `<h1>Ernährung &amp; Supplements</h1>
+  <div class="card"><h3>Dein Kalorien-Rechner</h3>
+    <div class="row wrap">
+      <select onchange="S.calc.sex=this.value;save();render()"><option value="">Geschlecht</option><option value="m" ${c.sex==="m"?"selected":""}>männlich</option><option value="f" ${c.sex==="f"?"selected":""}>weiblich</option></select>
+      <input inputmode="numeric" placeholder="Alter" value="${c.age||""}" onchange="S.calc.age=num(this.value);save();render()">
+      <select onchange="S.calc.act=+this.value;save();render()">
+        ${[[1.3,"Bürojob, wenig Schritte"],[1.45,"Normal aktiv + 2–3× Training"],[1.6,"Viel auf den Beinen + Training"]].map(([v,l])=>`<option value="${v}" ${(c.act||1.45)===v?"selected":""}>${l}</option>`).join("")}
+      </select></div>${res||`<p class="mut"><small>Alter und Geschlecht eintragen. Größe 169 cm und Gewicht (${bw} kg) sind hinterlegt.</small></p>`}</div>
+
+  <h2>Das Wichtigste zuerst</h2>
+  <div class="card">
+  <ul>
+  <li><b>1. Gesamtkalorien &amp; Gesamt-Protein pro Tag</b> entscheiden. Timing ist Feintuning.</li>
+  <li><b>2. Moderates Defizit:</b> 10–15 % unter Erhaltung (ca. 300–500 kcal). Zu hartes Defizit kostet Muskeln und Trainingsleistung. Ziel: ~0,3–0,7 kg Verlust pro Woche, bei dir anfangs eher der obere Bereich.</li>
+  <li><b>3. Protein:</b> 1,6–2,0 g pro kg Körpergewicht (bei dir ca. 140–175 g/Tag), auf 3–4 Mahlzeiten verteilt, je 30–50 g.</li>
+  <li><b>4. Schlaf</b> 7–9 h und <b>Schritte</b> (7–10 k/Tag) bringen mehr als jedes Supplement.</li>
+  <li><b>Rekomposition</b> funktioniert bei deinem Ausgangspunkt (Übergewicht, vermutlich untrainiert) gut: Muskelaufbau trotz Defizit ist hier realistisch, solange Training progressiv ist und Protein stimmt.</li></ul></div>
+
+  <h2>Rund ums Training</h2>
+  <div class="card">
+  <h3>Vor dem Training (1–3 h davor)</h3>
+  <p>Mahlzeit mit <b>25–40 g Protein + Kohlenhydraten</b>, wenig Fett/Ballaststoffe. Beispiele: Skyr + Haferflocken + Banane; Reis + Hähnchen; Vollkornbrot + Quark.</p>
+  <p class="mut"><small>Trainierst du früh nüchtern? Möglich, aber nicht besser für Fettverlust. Wenn die Leistung leidet: vorher Banane + Proteinshake.</small></p></div>
+  <div class="card">
+  <h3>Während des Trainings</h3>
+  <p><b>Wasser</b> (0,5–1 l). Bei &lt; 75 min Krafttraining ist <b>keine Kalorienzufuhr nötig</b>. Bei langen oder sehr harten Einheiten oder morgendlichem Nüchterntraining: 20–30 g Kohlenhydrate (Banane, Getränk) sind optional.</p></div>
+  <div class="card">
+  <h3>Nach dem Training (innerhalb ~2 h)</h3>
+  <p><b>25–40 g Protein</b> (Shake oder Mahlzeit) + normale Kohlenhydrate. Das „anabole Fenster" ist groß. Wenn du vor dem Training schon gegessen hast, ist die Eile gering. Der Shake ist Komfort, kein Zwang.</p></div>
+  <div class="card">
+  <h3>Eiweißshakes</h3>
+  <ul><li>Nur als Lückenfüller, wenn du dein Tagesprotein nicht mit normalem Essen erreichst.</li>
+  <li>Sinnvolle Zeitpunkte: nach dem Training, als Snack am Nachmittag oder vor dem Schlafen (Casein/Quark).</li>
+  <li>1–2 Shakes/Tag genügen. Whey (oder Isolat bei Laktoseproblemen).</li></ul></div>
+
+  <h2>Supplements</h2>
+  <div class="card"><table>
+  <tr><th>Mittel</th><th>Dosis &amp; Zeitpunkt</th><th>Nutzen</th></tr>
+  <tr><td><b>Kreatin-Monohydrat</b></td><td>3–5 g täglich, jederzeit (auch an Ruhetagen), mit Wasser/Shake. Kein Laden nötig.</td><td>Kraft &amp; Muskelaufbau (stärkste Evidenz). Wassereinlagerung 1–2 kg in den Muskeln möglich, ist <i>kein</i> Fett.</td></tr>
+  <tr><td><b>Vitamin D3</b></td><td>meist 1.000–2.000 IE/Tag zu einer fetthaltigen Mahlzeit, vor allem Okt.–März</td><td>Nur sinnvoll bei Mangel. Besser: 25-OH-D im Blut testen lassen und dann dosieren.</td></tr>
+  <tr><td><b>Magnesium</b></td><td>200–400 mg, abends</td><td>Nur bei zu geringer Zufuhr (Krämpfe, Schlaf) hilfreich. Citrat/Glycinat gut verträglich, Durchfall = Dosis senken.</td></tr>
+  <tr><td><b>Zink</b></td><td>8–15 mg zu einer Mahlzeit, nicht nüchtern (Übelkeit)</td><td>Nur bei zu geringer Zufuhr. Langfristig nicht dauerhaft über 25 mg/Tag (Kupfermangel-Risiko).</td></tr>
+  <tr><td><b>Koffein</b> (optional)</td><td>3 mg/kg (≈ 200–250 mg) ca. 30–60 min vor dem Training, nicht nach 14 Uhr</td><td>Mehr Leistung, aber Schlaf geht vor.</td></tr>
+  </table>
+  <div class="box w"><b>Wichtig:</b> Das ist allgemeine Information, keine ärztliche Beratung. Bei Nierenerkrankungen, Medikamenten (besonders Zink/Magnesium mit Antibiotika) oder Schwangerschaft vorher ärztlich klären. Bei einem Gewicht von 88,8 kg und BMI ≈ 31 ist ein Check-up (Blutdruck, Blutzucker/HbA1c, Blutbild, Vitamin D) vor dem Start sinnvoll.</div></div>
+
+  <h2>Beispiel-Tag (Trainingstag)</h2>
+  <div class="card"><ul>
+  <li><b>Frühstück:</b> Skyr/Quark + Haferflocken + Beeren (35 g P)</li>
+  <li><b>Mittag:</b> Hähnchen/Fisch/Tofu + Reis/Kartoffeln + viel Gemüse (40 g P)</li>
+  <li><b>Pre-Workout-Snack:</b> Banane + Magerquark (20 g P)</li>
+  <li><b>Nach dem Training:</b> Whey-Shake + 3–5 g Kreatin (25 g P)</li>
+  <li><b>Abend:</b> Eier/Fleisch/Hülsenfrüchte + Gemüse + etwas Vollkorn (40 g P)</li>
+  <li><b>Abends:</b> Magnesium (falls genutzt)</li></ul>
+  <p class="mut"><small>≈ 160 g Protein. Gemüse, Ballaststoffe und Wasser machen das Defizit erträglich.</small></p></div>`;
+}
+
+function vMore(){
+  return `<h1>Mehr</h1>
+  <div class="card"><h3>Trainingstage pro Woche</h3>
+    <div class="row"><button class="${S.settings.days===2?"pri":""} full" onclick="setDays(2)">2× (A/B)</button><button class="${S.settings.days===3?"pri":""} full" onclick="setDays(3)">3× (A/B/C)</button></div>
+    <p class="mut"><small>Bei 2 Tagen hast du zwei Ganzkörper-Einheiten. Bei 3 Tagen kommt C mit Variationen dazu. Beide Varianten sind für Muskelaufbau ähnlich wirksam, solange das Wochenvolumen pro Muskel grob 8–12 harte Sätze erreicht.</small></p></div>
+  <div class="card"><h3>Pausen-Timer</h3>
+    <label class="row"><input type="checkbox" ${S.settings.rest?"checked":""} onchange="S.settings.rest=this.checked;save()"> <span>Nach jedem Satz automatisch starten</span></label></div>
+  <div class="card"><h3>Backup</h3>
+    <p class="mut"><small>Deine Daten liegen nur auf diesem Gerät. Bei Browserdaten löschen oder Handywechsel sind sie weg, daher regelmäßig sichern.</small></p>
+    <div class="row wrap"><button onclick="exportData()">Exportieren</button><label class="btn">Importieren<input type="file" accept="application/json" hidden onchange="importData(this.files[0])"></label></div></div>
+  <div class="card"><h3>Installieren</h3><ul>
+    <li><b>Android (Chrome):</b> Menü ⋮ → „App installieren" / „Zum Startbildschirm".</li>
+    <li><b>iPhone (Safari):</b> Teilen-Symbol → „Zum Home-Bildschirm".</li></ul>
+    <p class="mut"><small>Danach läuft sie wie eine App und auch ohne Internet (Videos brauchen Netz).</small></p></div>
+  <div class="card"><button class="dng full" onclick="resetAll()">Alle Daten löschen</button></div>`;
+}
+function setDays(n){S.settings.days=n;save();render();}
+function exportData(){
+  const b=new Blob([JSON.stringify(S,null,1)],{type:"application/json"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(b);a.download="rekomp-backup-"+today()+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function importData(f){if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.sessions||!d.settings)throw 0;if(confirm("Aktuelle Daten durch das Backup ersetzen?")){S=Object.assign(load(),d);save();render();}}catch(e){alert("Datei ungültig.");}};r.readAsText(f);}
+function resetAll(){if(confirm("Wirklich ALLE Daten löschen? Das geht nicht rückgängig.")&&confirm("Letzte Warnung: Alles weg. Fortfahren?")){localStorage.removeItem(KEY);S=load();tab="train";render();}}
+
+render();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>

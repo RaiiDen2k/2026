@@ -160,6 +160,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;font-weight:800}
 @keyframes up{from{transform:translateY(20px);opacity:0}}
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);z-index:60;background:var(--surface-3);border:1px solid var(--line);color:var(--text);padding:8px 14px;border-radius:99px;font-size:var(--fs-sm);font-weight:600;box-shadow:var(--shadow);display:flex;gap:8px;align-items:center;transition:opacity .3s;pointer-events:none}
+.toast.act{pointer-events:auto;top:auto;bottom:calc(var(--tabbar) + env(safe-area-inset-bottom) + 16px);padding:6px 6px 6px 14px}
+.toast.act button{min-height:36px;padding:0 14px;border-radius:99px;background:var(--accent);color:var(--accent-ink);font-size:var(--fs-sm)}
 .save-dot{position:fixed;top:calc(env(safe-area-inset-top) + 12px);right:14px;z-index:15;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-3);transition:opacity .4s}
 .save-dot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
@@ -295,17 +297,40 @@ const estMin=p=>Math.round(PLANS[p].ex.reduce((a,id)=>a+EX[id].sets*(EX[id].rest
    State & Persistenz (kompatibel zu v1)
    ========================================================= */
 const KEY="rekomp.v1";
-const DEF=()=>({settings:{days:3,rest:true},sessions:[],bw:[],active:null,calc:{}});
+const SNAP="rekomp.snapshots";
+const DEF=()=>({settings:{days:3,rest:true},sessions:[],bw:[],active:null,calc:{},trash:[]});
 let S=load();
-function load(){try{const r=localStorage.getItem(KEY);if(r){const d=Object.assign(DEF(),JSON.parse(r));d.settings=Object.assign(DEF().settings,d.settings);d.calc=d.calc||{};return d;}}catch(e){}return DEF();}
+function normalize(d){
+  d=Object.assign(DEF(),d);d.settings=Object.assign(DEF().settings,d.settings);d.calc=d.calc||{};d.trash=(d.trash||[]).filter(t=>Date.now()-t.at<30*864e5).slice(-50);
+  // Doppelte Einträge reparieren: identische Kopien entfernen, sonst eindeutige ID vergeben
+  const seen=new Map(),out=[];
+  (d.sessions||[]).forEach(x=>{const k=String(x.id);if(seen.has(k)){if(JSON.stringify(seen.get(k))===JSON.stringify(x))return;let n=Number(x.id)||Date.now();while(seen.has(String(n)))n++;x.id=n;}seen.set(String(x.id),x);out.push(x);});
+  d.sessions=out;return d;
+}
+function load(){try{const r=localStorage.getItem(KEY);if(r)return normalize(JSON.parse(r));}catch(e){}return DEF();}
+/* Automatische Sicherungen im Gerät: 1× täglich + vor jeder Löschaktion, die letzten 10 */
+function snaps(){try{return JSON.parse(localStorage.getItem(SNAP)||"[]");}catch(e){return[];}}
+function snapshot(reason){
+  try{if(!S.sessions.length&&!S.bw.length)return;const l=snaps();const data=JSON.stringify(Object.assign({},S,{active:null}));
+    if(l.length&&l[l.length-1].data===data)return;l.push({ts:Date.now(),reason,n:S.sessions.length,data});localStorage.setItem(SNAP,JSON.stringify(l.slice(-10)));}catch(e){}
+}
+{const l=snaps(),last=l.length?l[l.length-1].ts:0;if(new Date(last).toDateString()!==new Date().toDateString())snapshot("Tägliche Sicherung");}
 let saveT;
 function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S));const el=$("#wsave")||$("#saved");if(el){el.style.opacity=1;clearTimeout(saveT);saveT=setTimeout(()=>el.style.opacity=0,1100);}}
   catch(e){toast("Speichern fehlgeschlagen","alert");}
 }
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
-document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
-window.addEventListener("pagehide",save);
+/* Mehrere offene Tabs/Fenster: immer den neuesten gespeicherten Stand übernehmen,
+   statt mit einem veralteten Stand zu überschreiben (jede Eingabe wird ohnehin sofort gespeichert) */
+function syncFromStorage(){
+  const ae=document.activeElement;if(ae&&ae.matches&&ae.matches("input,select"))return;
+  const fresh=load();if(JSON.stringify(fresh)===JSON.stringify(S))return;
+  S=fresh;if(view==="workout"&&!S.active)view=null;renderKeep();
+}
+window.addEventListener("storage",e=>{if(e.key===KEY)syncFromStorage();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncFromStorage();});
+window.addEventListener("pageshow",e=>{if(e.persisted)syncFromStorage();});
 
 /* Helpers */
 const $=s=>document.querySelector(s);
@@ -321,7 +346,12 @@ const e1rm=(w,r)=>w*(1+r/30);
 const vib=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
 const weekStart=d=>{d=new Date(d);d.setHours(12,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d;};
 const sameWeek=(a,b)=>weekStart(a).getTime()===weekStart(b).getTime();
-function toast(msg,icon="check"){const t=document.createElement("div");t.className="toast";t.innerHTML=ico(icon,"s")+esc(msg);document.body.appendChild(t);setTimeout(()=>t.style.opacity=0,1800);setTimeout(()=>t.remove(),2200);}
+function toast(msg,icon="check",action=null){
+  document.querySelectorAll(".toast").forEach(x=>x.remove());
+  const t=document.createElement("div");t.className="toast"+(action?" act":"");t.innerHTML=ico(icon,"s")+"<span>"+esc(msg)+"</span>";
+  if(action){const b=document.createElement("button");b.textContent=action.label;b.onclick=()=>{t.remove();action.fn();};t.appendChild(b);}
+  document.body.appendChild(t);const ms=action?7000:1800;setTimeout(()=>t.style.opacity=0,ms);setTimeout(()=>t.remove(),ms+400);
+}
 
 let tab="train", view=null; // view: 'workout' | 'summary'
 let lastSummary=null;
@@ -348,7 +378,8 @@ function progressHint(id){
 function startWorkout(p){
   if(S.active){openWorkout();return;}
   const sets={};PLANS[p].ex.forEach(id=>sets[id]=Array.from({length:EX[id].sets},()=>({w:"",r:"",done:false})));
-  S.active={id:Date.now(),plan:p,date:today(),sets,finished:false,start:Date.now()};
+  let nid=Date.now();while(S.sessions.some(x=>x.id===nid))nid++;
+  S.active={id:nid,plan:p,date:today(),sets,finished:false,start:Date.now()};
   save();vib(15);openWorkout();
 }
 function openWorkout(){view="workout";render();window.scrollTo(0,0);}
@@ -362,11 +393,15 @@ async function finishWorkout(){
   const a=S.active,c=counts(a);
   if(!c.d){if(await ask({title:"Noch kein Satz erledigt",text:"Ohne abgehakte Sätze wird nichts gespeichert. Training verwerfen?",ok:"Verwerfen",danger:true})){S.active=null;stopTimer();save();view=null;render();}return;}
   if(c.d<c.t&&!await ask({title:"Training beenden?",text:`${c.d} von ${c.t} Sätzen erledigt. Offene Sätze werden nicht gespeichert.`,ok:"Beenden & speichern"}))return;
+  // Wurde das Training inzwischen in einem anderen Tab abgeschlossen? Dann nicht doppelt speichern.
+  S=load();
+  if(!S.active||S.active.id!==a.id||S.sessions.some(x=>x.id===a.id)){toast("Training war bereits gespeichert","info");view=null;render();return;}
   const prs=[];
   Object.keys(a.sets).forEach(id=>{if(EX[id].unit==="s")return;const prev=bestE1(id,a.id);const now=Math.max(0,...a.sets[id].filter(validSet).map(x=>(num(x.w)||0)>0?e1rm(num(x.w),num(x.r)):0));if(prev>0&&now>prev+.05)prs.push({id,now,prev});});
-  a.finished=true;a.end=Date.now();
+  S.active.finished=true;S.active.end=Date.now();
+  a.finished=true;a.end=S.active.end;
   a.sets=Object.fromEntries(Object.entries(a.sets).map(([k,v])=>[k,v.filter(x=>x.done)]));
-  S.sessions.push(a);S.active=null;stopTimer();save();vib([20,40,20]);
+  S.sessions.push(a);S.active=null;stopTimer();save();snapshot("Nach Training");vib([20,40,20]);
   lastSummary={s:a,prs};view="summary";render();window.scrollTo(0,0);
 }
 async function discardWorkout(){if(await ask({title:"Training verwerfen?",text:"Alle Eingaben dieser Einheit gehen verloren.",ok:"Verwerfen",danger:true})){S.active=null;stopTimer();save();view=null;render();}}
@@ -550,6 +585,7 @@ function vHome(){
       <button class="btn-pri btn-block btn-lg" onclick="startWorkout('${n}')">${ico("play")} Training starten</button></div>`;
   return `<header style="margin:8px 4px 20px"><div class="eyebrow">${now.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})}</div><h1 class="title" style="margin-top:4px">${greet}</h1></header>
   ${hero}
+  ${needsBackup()?`<div class="note" style="margin-top:12px;align-items:center">${ico("shield")}<div class="grow"><b style="color:var(--text)">${S.lastExport?"Backup ist "+backupAge()+" Tage alt":"Noch kein Backup"}</b><br>Sichere deine Trainings, falls das Handy den Speicher leert.</div><button class="btn-sm btn-pri" onclick="exportData()">Sichern</button></div>`:""}
   <div class="card" style="margin-top:12px">
     <div class="row between"><div><div class="h3">Diese Woche</div><div class="sm t3">${wk>=S.settings.days?"Wochenziel erreicht. Stark!":`Noch ${S.settings.days-wk} ${S.settings.days-wk===1?"Einheit":"Einheiten"} bis zum Ziel`}</div></div>
     <div style="text-align:right"><div class="h2 num">${wk}<span class="t3">/${S.settings.days}</span></div>${streak?`<div class="xs" style="color:var(--warn);display:flex;align-items:center;gap:4px;justify-content:flex-end">${ico("flame","s")} ${streak} ${streak===1?"Woche":"Wochen"} in Folge</div>`:""}</div></div>
@@ -617,7 +653,7 @@ function vSummary(){
   ${prs.length?`<div class="section-head"><h2 class="h2">Neue Bestleistungen</h2><span class="chip acc">${prs.length} PR</span></div><div class="card" style="padding:4px 16px">${prs.map(p=>`<div class="pr"><span class="badge acc" style="width:36px;height:36px">${ico("up","s")}</span><div class="grow"><div class="h3">${esc(EX[p.id].n)}</div><div class="xs t3">Geschätztes 1RM</div></div><div class="h3 num delta-up">${fmtN(p.now)} kg <span class="xs t3">(+${fmtN(p.now-p.prev)})</span></div></div>`).join("")}</div>`:""}
   <div class="section-head"><h2 class="h2">Nach dem Training</h2></div>
   <div class="list"><div class="li"><span class="ico">${ico("drop","s")}</span><span class="grow sm t2"><b class="h3" style="color:var(--text)">25–40 g Protein</b> in den nächsten 2 Stunden (Mahlzeit oder Shake)</span></div><div class="li"><span class="ico">${ico("bolt","s")}</span><span class="grow sm t2"><b class="h3" style="color:var(--text)">Kreatin</b> 3–5 g, falls heute noch nicht genommen</span></div></div>
-  <div class="stack-s" style="margin-top:24px"><button class="btn-pri btn-block btn-lg" onclick="lastSummary=null;view=null;go('prog')">Fortschritt ansehen</button><button class="btn-block btn-ghost" onclick="lastSummary=null;view=null;go('train')">Zur Übersicht</button></div>`;
+  <div class="stack-s" style="margin-top:24px"><button class="btn-pri btn-block btn-lg" onclick="lastSummary=null;view=null;go('prog')">Fortschritt ansehen</button>${needsBackup()?`<button class="btn-block" onclick="exportData()">${ico("download","s")} Backup sichern</button>`:""}<button class="btn-block btn-ghost" onclick="lastSummary=null;view=null;go('train')">Zur Übersicht</button></div>`;
 }
 
 /* ---------- Fortschritt ---------- */
@@ -661,11 +697,30 @@ function vProg(){
   <div class="card"><div class="h3">Trainings pro Woche</div>${barChart(cnt,labels,{goal:S.settings.days,unit:" Einheiten"})}</div>
   <div class="card" style="margin-top:12px"><div class="h3">Volumen pro Woche</div><div class="xs t3">Gewicht × Wiederholungen, in Tonnen</div>${barChart(vol,labels,{fmt:v=>fmtN(v,1),color:"var(--chart)",unit:" t"})}</div>
   <div class="section-head"><h2 class="h2">Verlauf</h2><span class="sm t3">${fin.length} gesamt</span></div>
-  ${hist.length?`<div class="list">${hist.map(s=>`<div class="li"><span class="badge">${s.plan}</span><span class="grow"><span class="h3" style="display:block">${fmtLong(s.date)}</span><span class="sm t3 num">${Object.values(s.sets).flat().filter(x=>x.done).length} Sätze · ${fmtN(volumeOf(s)/1000,1)} t${s.end?" · "+dur(s.end-s.start):""}</span></span><button class="icon-btn btn-ghost" onclick="delSession(${s.id})" aria-label="Training löschen">${ico("trash","s")}</button></div>`).join("")}</div>`:`<div class="card">${emptyState("history","Noch keine Trainings gespeichert.")}</div>`}`;
+  ${hist.length?`<div class="list">${hist.map(s=>`<div class="li"><span class="badge">${s.plan}</span><span class="grow"><span class="h3" style="display:block">${fmtLong(s.date)}${timeOf(s)?` <span class="t3" style="font-weight:500">· ${timeOf(s)}</span>`:""}</span><span class="sm t3 num">${Object.values(s.sets).flat().filter(x=>x.done).length} Sätze · ${fmtN(volumeOf(s)/1000,1)} t${s.end?" · "+dur(s.end-s.start):""}</span></span><button class="icon-btn btn-ghost" onclick="delSession('${s.id}')" aria-label="Training löschen">${ico("trash","s")}</button></div>`).join("")}</div>`:`<div class="card">${emptyState("history","Noch keine Trainings gespeichert.")}</div>`}`;
 }
 function addBw(){const v=num($("#bwin").value);if(!v||v<30||v>300){toast("Bitte gültiges Gewicht eingeben","alert");return;}
   const d=today(),i=S.bw.findIndex(b=>b.date===d);if(i>=0)S.bw[i].kg=v;else S.bw.push({date:d,kg:v});S.bw.sort((a,b)=>a.date<b.date?-1:1);save();renderKeep();toast("Gewicht gespeichert");}
-async function delSession(id){if(await ask({title:"Training löschen?",text:"Dieser Eintrag wird dauerhaft aus deinem Verlauf entfernt.",ok:"Löschen",danger:true})){S.sessions=S.sessions.filter(s=>s.id!==id);save();renderKeep();}}
+const timeOf=s=>s.start?new Date(s.start).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}):"";
+async function delSession(id){
+  const i=S.sessions.findIndex(s=>String(s.id)===String(id));if(i<0)return;
+  const s=S.sessions[i],n=Object.values(s.sets).flat().filter(x=>x.done).length;
+  if(!await ask({title:"Dieses Training löschen?",text:`${PLANS[s.plan].name} · ${fmtLong(s.date)}${timeOf(s)?" · "+timeOf(s)+" Uhr":""} · ${n} Sätze. Du kannst es 30 Tage lang unter „Mehr → Papierkorb“ wiederherstellen.`,ok:"Löschen",danger:true}))return;
+  snapshot("Vor dem Löschen");
+  const j=S.sessions.findIndex(x=>x===s);if(j<0)return;
+  S.sessions.splice(j,1);S.trash.push({at:Date.now(),s});save();renderKeep();
+  toast("Training gelöscht","trash",{label:"Rückgängig",fn:()=>restoreTrash(s.id)});
+}
+function restoreTrash(id){
+  const k=S.trash.findIndex(t=>String(t.s.id)===String(id));if(k<0)return;
+  const s=S.trash.splice(k,1)[0].s;if(!S.sessions.some(x=>x.id===s.id))S.sessions.push(s);
+  S.sessions.sort((a,b)=>(a.start||0)-(b.start||0));save();renderKeep();toast("Training wiederhergestellt");
+}
+async function restoreSnap(ts){
+  const sn=snaps().find(x=>x.ts===ts);if(!sn)return;const d=JSON.parse(sn.data);
+  if(!await ask({title:"Sicherung wiederherstellen?",text:`Stand vom ${new Date(ts).toLocaleString("de-DE",{dateStyle:"medium",timeStyle:"short"})} mit ${d.sessions.length} Trainings. Der aktuelle Stand wird vorher selbst gesichert.`,ok:"Wiederherstellen"}))return;
+  snapshot("Vor Wiederherstellung");const act=S.active;S=normalize(d);S.active=act;save();render();toast("Sicherung wiederhergestellt");
+}
 
 /* ---------- Ernährung ---------- */
 function vFood(){
@@ -744,7 +799,12 @@ function vMore(){
     <button class="li" onclick="exportData()"><span class="ico">${ico("download","s")}</span><span class="grow"><span class="h3" style="display:block">Backup exportieren</span><span class="sm t3">Als Datei sichern</span></span><span class="t3">${ico("right")}</span></button>
     <label class="li" style="cursor:pointer"><span class="ico">${ico("upload","s")}</span><span class="grow"><span class="h3" style="display:block">Backup importieren</span><span class="sm t3">Ersetzt die aktuellen Daten</span></span><span class="t3">${ico("right")}</span><input type="file" accept="application/json,.json" hidden onchange="importData(this.files[0])"></label>
   </div>
-  <div class="note" style="margin-top:12px">${ico("shield")}<div>Deine Daten liegen nur auf diesem Gerät. Wenn du Browserdaten löschst oder das Handy wechselst, sind sie weg. Exportiere deshalb regelmäßig ein Backup.</div></div>
+  <div class="note" style="margin-top:12px">${ico("shield")}<div><b style="color:var(--text)">${S.lastExport?`Letztes Backup: ${backupAge()===0?"heute":"vor "+backupAge()+" "+(backupAge()===1?"Tag":"Tagen")}`:"Noch kein Backup erstellt"}.</b> Deine Daten liegen nur auf diesem Gerät. Speichere das Backup in „Dateien“ oder iCloud Drive, nicht nur im Download-Ordner.</div></div>
+  ${S.trash.length?`<div class="section-head"><h2 class="h3 t3 eyebrow">Papierkorb · 30 Tage</h2></div>
+  <div class="list">${[...S.trash].reverse().map(t=>`<div class="li"><span class="badge">${t.s.plan}</span><span class="grow"><span class="h3" style="display:block">${fmtLong(t.s.date)}${timeOf(t.s)?" · "+timeOf(t.s):""}</span><span class="sm t3">gelöscht ${new Date(t.at).toLocaleDateString("de-DE")}</span></span><button class="btn-sm" onclick="restoreTrash('${t.s.id}')">Wiederherstellen</button></div>`).join("")}</div>`:""}
+  ${snaps().length?`<div class="section-head"><h2 class="h3 t3 eyebrow">Automatische Sicherungen</h2></div>
+  <div class="list">${snaps().slice().reverse().map(x=>`<div class="li"><span class="ico">${ico("history","s")}</span><span class="grow"><span class="h3" style="display:block">${new Date(x.ts).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span><span class="sm t3">${esc(x.reason)} · ${x.n} Trainings</span></span><button class="btn-sm" onclick="restoreSnap(${x.ts})">Laden</button></div>`).join("")}</div>
+  <p class="xs t3" style="margin:8px 4px 0">Liegen im selben Speicher wie die App. Sie schützen vor Fehlbedienung, nicht vor dem Löschen der Browserdaten.</p>`:""}
 
   <div class="section-head"><h2 class="h3 t3 eyebrow">App installieren</h2></div>
   <div class="list">
@@ -754,12 +814,20 @@ function vMore(){
 
   <div class="section-head"><h2 class="h3 t3 eyebrow">Gefahrenzone</h2></div>
   <button class="btn-danger btn-block btn-lg" onclick="resetAll()">${ico("trash","s")} Alle Daten löschen</button>
-  <p class="xs t3" style="text-align:center;margin-top:24px">Rekomp Training · v3</p>`;
+  <p class="xs t3" style="text-align:center;margin-top:24px">Rekomp Training · v4</p>`;
 }
 function setDays(n){S.settings.days=n;save();renderKeep();}
-function exportData(){const b=new Blob([JSON.stringify(S,null,1)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="rekomp-backup-"+today()+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast("Backup erstellt","download");}
-function importData(f){if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.sessions||!d.settings)throw 0;if(await ask({title:"Backup importieren?",text:`${d.sessions.length} Trainings und ${(d.bw||[]).length} Gewichtseinträge ersetzen die aktuellen Daten.`,ok:"Importieren"})){S=Object.assign(DEF(),d);save();render();toast("Backup importiert");}}catch(e){toast("Datei ungültig","alert");}};r.readAsText(f);}
-async function resetAll(){if(await ask({title:"Alle Daten löschen?",text:"Trainings, Gewicht und Einstellungen werden unwiderruflich gelöscht. Exportiere vorher ein Backup.",ok:"Endgültig löschen",danger:true})){localStorage.removeItem(KEY);S=load();tab="train";view=null;render();toast("Alle Daten gelöscht","trash");}}
+async function exportData(){
+  const name="rekomp-backup-"+today()+".json",txt=JSON.stringify(Object.assign({},S,{trash:[]}),null,1);
+  const mark=()=>{S.lastExport=Date.now();save();renderKeep();toast("Backup erstellt","download");};
+  try{const f=new File([txt],name,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:"Rekomp Backup"});mark();return;}}catch(e){if(e&&e.name==="AbortError")return;}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);mark();
+}
+const backupAge=()=>S.lastExport?Math.floor((Date.now()-S.lastExport)/864e5):null;
+const needsBackup=()=>S.sessions.filter(s=>s.finished).length>0&&(backupAge()===null||backupAge()>=7);
+function importData(f){if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.sessions||!d.settings)throw 0;if(await ask({title:"Backup importieren?",text:`${d.sessions.length} Trainings und ${(d.bw||[]).length} Gewichtseinträge ersetzen die aktuellen Daten.`,ok:"Importieren"})){snapshot("Vor Import");S=normalize(d);save();render();toast("Backup importiert");}}catch(e){toast("Datei ungültig","alert");}};r.readAsText(f);}
+async function resetAll(){if(await ask({title:"Alle Daten löschen?",text:"Trainings, Gewicht und Einstellungen werden gelöscht. Eine automatische Sicherung bleibt unter „Mehr“ erhalten.",ok:"Endgültig löschen",danger:true})){snapshot("Vor „Alle Daten löschen“");localStorage.removeItem(KEY);S=load();tab="train";view=null;render();toast("Alle Daten gelöscht","trash");}}
 
 /* iOS-Fix: Nach dem Schließen der Tastatur bleiben fixierte Leisten sonst verschoben */
 function fixViewport(){const y=window.scrollY;window.scrollTo(0,y+1);requestAnimationFrame(()=>window.scrollTo(0,y));}

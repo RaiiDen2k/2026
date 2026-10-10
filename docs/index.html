@@ -36,6 +36,8 @@
   --shadow:0 8px 30px rgba(15,23,42,.10);
   color-scheme:light;
 }}
+/* Fremd-Overlays (z. B. Hosting-Badge) ausblenden */
+body>:not(#app):not(#float):not(#sheet):not(#nav):not(#saved):not(#rest):not(.toast):not(script):not(style){display:none!important}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ================= Base ================= */
@@ -442,11 +444,11 @@ function lineChart(series,{h=180,unit="kg",ref=null}={}){
   const id="c"+(++chId),W=340,H=h,pl=36,pr=10,pt=14,pb=24;
   const all=series.flatMap(s=>s.pts);
   let x0=Math.min(...all.map(p=>p.t)),x1=Math.max(...all.map(p=>p.t)),y0=Math.min(...all.map(p=>p.y)),y1=Math.max(...all.map(p=>p.y));
-  if(y0===y1){y0-=1;y1+=1;}const pad=(y1-y0)*.15;y0-=pad;y1+=pad;if(x0===x1)x1=x0+864e5;
+  if(y0===y1){y0-=1;y1+=1;}const pad=(y1-y0)*.15;y0-=pad;y1+=pad;if(x0===x1){x0-=3*864e5;x1+=3*864e5;}
   const X=t=>pl+(t-x0)/(x1-x0)*(W-pl-pr),Y=y=>pt+(1-(y-y0)/(y1-y0))*(H-pt-pb);
   let g="";for(let i=0;i<=3;i++){const v=y0+(y1-y0)*i/3,yy=Y(v).toFixed(1);g+=`<line x1="${pl}" x2="${W-pr}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${pl-8}" y="${+yy+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${fmtN(v,v>=100?0:1)}</text>`;}
   const fl=main[0],ll=main[main.length-1];
-  g+=`<text x="${X(fl.t)}" y="${H-6}" font-size="10" fill="var(--text-3)">${fl.d}</text><text x="${X(ll.t)}" y="${H-6}" text-anchor="end" font-size="10" fill="var(--text-3)">${ll.d}</text>`;
+  g+=`<text x="${X(fl.t)}" y="${H-6}" font-size="10" fill="var(--text-3)">${fl.d}</text>`+(X(ll.t)-X(fl.t)>50?`<text x="${X(ll.t)}" y="${H-6}" text-anchor="end" font-size="10" fill="var(--text-3)">${ll.d}</text>`:"");
   let body="";
   series.forEach((s,si)=>{
     const d=s.pts.map((p,i)=>(i?"L":"M")+X(p.t).toFixed(1)+","+Y(p.y).toFixed(1)).join("");
@@ -503,6 +505,7 @@ const emptyState=(i,t)=>`<div class="empty"><div class="ico">${ico(i)}</div><div
    Render
    ========================================================= */
 function render(){
+  const ae=document.activeElement;if(ae&&ae!==document.body&&$("#app").contains(ae))ae.blur();
   chId=0;for(const k in CH)delete CH[k];
   clearInterval(clockInt);
   let html;
@@ -631,6 +634,7 @@ function vProg(){
   let strength=emptyState("dumbbell","Schließe dein erstes Training ab, dann siehst du hier deine Kraftentwicklung.");
   if(sel){
     const pts=[];fin.forEach(s=>{const a=(s.sets[sel]||[]).filter(x=>validSet(x)&&(num(x.w)||0)>0);if(a.length)pts.push({t:dt(s.date).getTime(),d:fmtD(s.date),y:+(metric==="e1"?Math.max(...a.map(x=>e1rm(num(x.w),num(x.r)))):Math.max(...a.map(x=>num(x.w)))).toFixed(1)});});
+    {const m=new Map();pts.forEach(q=>{const o=m.get(q.t);if(!o||q.y>o.y)m.set(q.t,q);});pts.length=0;pts.push(...m.values());}
     const d=pts.length>1?pts[pts.length-1].y-pts[0].y:null;
     strength=`<select aria-label="Übung wählen" onchange="S.selEx=this.value;save();renderKeep()">${ids.map(id=>`<option value="${id}" ${id===sel?"selected":""}>${esc(EX[id].n)}</option>`).join("")}</select>
       <div class="seg" style="margin-top:10px" role="group"><button aria-pressed="${metric==="e1"}" onclick="S.selMetric='e1';save();renderKeep()">Geschätztes 1RM</button><button aria-pressed="${metric==="top"}" onclick="S.selMetric='top';save();renderKeep()">Top-Gewicht</button></div>
@@ -750,12 +754,18 @@ function vMore(){
 
   <div class="section-head"><h2 class="h3 t3 eyebrow">Gefahrenzone</h2></div>
   <button class="btn-danger btn-block btn-lg" onclick="resetAll()">${ico("trash","s")} Alle Daten löschen</button>
-  <p class="xs t3" style="text-align:center;margin-top:24px">Rekomp Training · v2</p>`;
+  <p class="xs t3" style="text-align:center;margin-top:24px">Rekomp Training · v3</p>`;
 }
 function setDays(n){S.settings.days=n;save();renderKeep();}
 function exportData(){const b=new Blob([JSON.stringify(S,null,1)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="rekomp-backup-"+today()+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast("Backup erstellt","download");}
 function importData(f){if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.sessions||!d.settings)throw 0;if(await ask({title:"Backup importieren?",text:`${d.sessions.length} Trainings und ${(d.bw||[]).length} Gewichtseinträge ersetzen die aktuellen Daten.`,ok:"Importieren"})){S=Object.assign(DEF(),d);save();render();toast("Backup importiert");}}catch(e){toast("Datei ungültig","alert");}};r.readAsText(f);}
 async function resetAll(){if(await ask({title:"Alle Daten löschen?",text:"Trainings, Gewicht und Einstellungen werden unwiderruflich gelöscht. Exportiere vorher ein Backup.",ok:"Endgültig löschen",danger:true})){localStorage.removeItem(KEY);S=load();tab="train";view=null;render();toast("Alle Daten gelöscht","trash");}}
+
+/* iOS-Fix: Nach dem Schließen der Tastatur bleiben fixierte Leisten sonst verschoben */
+function fixViewport(){const y=window.scrollY;window.scrollTo(0,y+1);requestAnimationFrame(()=>window.scrollTo(0,y));}
+document.addEventListener("focusout",e=>{if(e.target.matches&&e.target.matches("input,select"))setTimeout(()=>{if(!document.activeElement||!document.activeElement.matches("input,select"))fixViewport();},60);});
+if(window.visualViewport){let lastH=visualViewport.height;visualViewport.addEventListener("resize",()=>{const h=visualViewport.height;if(h>lastH+100)setTimeout(fixViewport,60);lastH=h;});}
+window.addEventListener("pageshow",()=>setTimeout(fixViewport,60));
 
 /* Start: laufendes Training direkt wieder öffnen */
 if(S.active)view="workout";
